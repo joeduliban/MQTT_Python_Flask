@@ -2,100 +2,179 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <title>Flux de Données Capteurs</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <title>Dashboard Capteurs IoT</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
-        /* Scrollbar styling */
-        #chat-container::-webkit-scrollbar {
-            width: 8px;
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: auto; }
+        canvas { width: 100%; height: 400px; }
+        .navbar { 
+            display: flex; 
+            justify-content: space-around; 
+            margin-bottom: 20px; 
+            background-color: #f1f1f1; 
+            padding: 10px;
         }
-        #chat-container::-webkit-scrollbar-track {
-            background: #f1f1f1;
+        .navbar button {
+            padding: 10px;
+            cursor: pointer;
         }
-        #chat-container::-webkit-scrollbar-thumb {
-            background: #888;
-            border-radius: 4px;
-        }
-        #chat-container::-webkit-scrollbar-thumb:hover {
-            background: #555;
-        }
+        .chart-container { display: none; }
+        .active { display: block; }
     </style>
 </head>
-<body class="bg-gray-100">
-    <div class="container mx-auto max-w-2xl px-4 py-8">
-        <div class="bg-white rounded-xl shadow-lg overflow-hidden">
-            <div class="bg-blue-600 text-white p-4 text-center font-bold">
-                Flux de Données Capteurs
-            </div>
-            
-            <div id="chat-container" class="h-[600px] overflow-y-auto p-4 space-y-4">
-                <!-- Messages seront ajoutés ici dynamiquement -->
-            </div>
-        </div>
+<body>
+    <div class="navbar">
+        <button onclick="showChart('temperature')">Température</button>
+        <button onclick="showChart('humidity')">Humidité</button>
+        <button onclick="showChart('light')">Lumière</button>
     </div>
 
+    <div id="temperatureChart-container" class="chart-container active">
+        <canvas id="temperatureChart"></canvas>
+    </div>
+    <div id="humidityChart-container" class="chart-container">
+        <canvas id="humidityChart"></canvas>
+    </div>
+    <div id="lightChart-container" class="chart-container">
+        <canvas id="lightChart"></canvas>
+    </div>
+
+    <div id="lastUpdate"></div>
+
     <script>
-        const chatContainer = document.getElementById('chat-container');
+        const socket = io();
+        const deviceData = {
+            'Device Alpha': { temperature: [], humidity: [], light: [] },
+            'Device Beta': { temperature: [], humidity: [], light: [] }
+        };
+        const charts = {};
 
-        function createMessageElement(data) {
-            const messageDiv = document.createElement('div');
-            messageDiv.classList.add(
-                'p-4', 'rounded-lg', 'max-w-md', 'break-words',
-                'bg-blue-50', 'text-gray-800', 'shadow-sm'
-            );
+        function initCharts() {
+            const chartConfigs = [
+                { 
+                    id: 'temperatureChart', 
+                    label: 'Température (°C)', 
+                    dataKey: 'temperature',
+                    colors: ['blue', 'red']
+                },
+                { 
+                    id: 'humidityChart', 
+                    label: 'Humidité (%)', 
+                    dataKey: 'humidity',
+                    colors: ['green', 'orange']
+                },
+                { 
+                    id: 'lightChart', 
+                    label: 'Lumière', 
+                    dataKey: 'light',
+                    colors: ['yellow', 'purple']
+                }
+            ];
 
-            const timestamp = new Date(data.timestamp).toLocaleString('fr-FR', {
-                year: 'numeric',
-                month: 'long',
-                day: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit',
-                second: '2-digit'
+            chartConfigs.forEach(config => {
+                charts[config.id] = new Chart(document.getElementById(config.id), {
+                    type: 'line',
+                    data: {
+                        labels: [],
+                        datasets: [
+                            {
+                                label: `Device Alpha - ${config.label}`,
+                                data: [],
+                                borderColor: config.colors[0]
+                            },
+                            {
+                                label: `Device Beta - ${config.label}`,
+                                data: [],
+                                borderColor: config.colors[1]
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            title: { 
+                                display: true, 
+                                text: `${config.label} des Capteurs`
+                            }
+                        }
+                    }
+                });
+            });
+        }
+
+        function showChart(type) {
+            // Hide all chart containers
+            ['temperature', 'humidity', 'light'].forEach(chartType => {
+                document.getElementById(`${chartType}Chart-container`).classList.remove('active');
+            });
+            
+            // Show selected chart
+            document.getElementById(`${type}Chart-container`).classList.add('active');
+        }
+
+        socket.on('new_sensor_data', function(data) {
+            const deviceName = data.device_name;
+            const timestamp = new Date(data.timestamp).toLocaleTimeString();
+
+            // Update data for each chart type
+            ['temperature', 'humidity', 'light'].forEach(type => {
+                const value = data[type];
+                deviceData[deviceName][type].push(value);
+
+                // Limit to 20 points
+                if (deviceData[deviceName][type].length > 20) {
+                    deviceData[deviceName][type].shift();
+                }
+
+                // Update specific chart
+                const chart = charts[`${type}Chart`];
+                chart.data.labels.push(timestamp);
+                if (chart.data.labels.length > 20) {
+                    chart.data.labels.shift();
+                }
+
+                chart.data.datasets[0].data = deviceData['Device Alpha'][type];
+                chart.data.datasets[1].data = deviceData['Device Beta'][type];
+                chart.update();
             });
 
-            messageDiv.innerHTML = `
-                <div class="font-bold text-blue-600 mb-2">${timestamp}</div>
-                <div class="grid grid-cols-3 gap-2">
-                    <div class="text-center">
-                        <span class="block text-sm text-gray-500">Température</span>
-                        <span class="font-bold text-red-600">${data.temperature} °C</span>
-                    </div>
-                    <div class="text-center">
-                        <span class="block text-sm text-gray-500">Humidité</span>
-                        <span class="font-bold text-green-600">${data.humidity} %</span>
-                    </div>
-                    <div class="text-center">
-                        <span class="block text-sm text-gray-500">Luminosité</span>
-                        <span class="font-bold text-yellow-600">${data.light} Lux</span>
-                    </div>
-                </div>
-            `;
+            // Update last update time
+            document.getElementById('lastUpdate').textContent = 
+                `Dernière mise à jour: ${new Date(data.timestamp).toLocaleString()}`;
 
-            return messageDiv;
-        }
+            // Temperature difference check
+            checkTemperatureDifference(data);
+        });
 
-        function updateChat() {
-            fetch('/data')
-                .then(response => response.json())
-                .then(data => {
-                    // Vider le conteneur
-                    chatContainer.innerHTML = '';
+        function checkTemperatureDifference(newData) {
+            const alphaTemps = deviceData['Device Alpha'].temperature;
+            const betaTemps = deviceData['Device Beta'].temperature;
 
-                    // Ajouter chaque message
-                    data.forEach(sensorData => {
-                        const messageElement = createMessageElement(sensorData);
-                        chatContainer.appendChild(messageElement);
+            if (alphaTemps.length > 0 && betaTemps.length > 0) {
+                const lastAlpha = alphaTemps[alphaTemps.length - 1];
+                const lastBeta = betaTemps[betaTemps.length - 1];
+                const tempDiff = Math.abs(lastAlpha - lastBeta);
+
+                if (tempDiff > 5) {
+                    Swal.fire({
+                        icon: 'warning',
+                        title: 'Alerte Température',
+                        text: `Différence significative entre les capteurs: ${tempDiff.toFixed(2)}°C`,
+                        toast: true,
+                        position: 'top-end',
+                        showConfirmButton: false,
+                        timer: 5000
                     });
-
-                    // Scroller automatiquement en bas
-                    chatContainer.scrollTop = chatContainer.scrollHeight;
-                })
-                .catch(error => console.error('Erreur de récupération des données:', error));
+                }
+            }
         }
 
-        // Mise à jour initiale et toutes les 5 secondes
-        updateChat();
-        setInterval(updateChat, 5000);
+        // Initialize charts
+        initCharts();
+        // Default to temperature chart
+        showChart('temperature');
     </script>
 </body>
 </html>

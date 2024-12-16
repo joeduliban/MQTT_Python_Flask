@@ -8,7 +8,7 @@ import threading
 app = Flask(__name__)
 socketio = SocketIO(app)
 
-# Configuration MQTT (identique à votre code précédent)
+# Configuration MQTT
 TTN_USERNAME = "joe-valentin-isib-test-lora@ttn"
 TTN_PASSWORD = "NNSXS.MRNEVXPTLWEG75MMWK6EYO4JZ5DV3JX644IOM7A.UW3AJHVDETRSWMBZLJDLINTFNVCI4FEIEX4UBXOKXSI3NPFC4MJQ"
 TTN_BROKER = "eu1.cloud.thethings.network"
@@ -30,21 +30,16 @@ def process_ttn_payload(payload_json):
             
             device_id = payload_json.get('end_device_ids', {}).get('device_id', 'Unknown')
             device_name = DEVICES.get(device_id, device_id)
-            
-            if isinstance(decoded_payload.get('payload'), str):
-                values = decoded_payload['payload'].split(',')
-                
-                if len(values) == 3:
-                    return {
-                        'device_name': device_name,
-                        'device_id': device_id,
-                        'temperature': float(values[0]),
-                        'humidity': float(values[1]),
-                        'light': float(values[2]),
-                        'timestamp': timestamp_str
-                    }
-            
-            return None
+            payload = decoded_payload.get('payload')
+            return {
+                'device_name': device_name,
+                'device_id': device_id,
+                'temperature': payload.get('temperature'),
+                'humidity': payload.get('humidity'),
+                'light': payload.get('light'),
+                'timestamp': timestamp_str
+            }
+        
     except Exception as e:
         print(f"Erreur de traitement des données TTN: {e}")
         return None
